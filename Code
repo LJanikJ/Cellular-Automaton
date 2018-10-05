@@ -1,13 +1,12 @@
 //Variable Declarations
-int n = 80;
+int n = 100;
 int[][] cells;
 int[][] newCells;
 float cellSize;
 float padding = 30;
-int blinksPerSecond = 15;
-int[] lastTornado;
+int blinksPerSecond = 30;
+int genCount = 0;
 float rand;
-int genCount;
 String danger;
 String cellBehaviour;
 float[][] xDist;
@@ -22,11 +21,16 @@ int lightningY;
 int lastStrikeX;
 int lastStrikeY;
 int r;
+boolean tornado;
+int tornadoX;
+int tornadoY;
+int tornadoDirection;
+int fracAlive;
 
-//0 = Empty
-//1 = Alive
-//2 = Lightning
-//3 = Tornado
+// 0 = Empty
+// 1 = Alive
+// 2 = Lightning
+// 3 = Tornado
 
 void setup() {
   //Define Variables
@@ -35,13 +39,16 @@ void setup() {
   cellSize = (width - (2 * padding)) / n;
   cells = new int[n][n];
   newCells = new int[n][n];
-  xDist = new float[n][n];
+  xDist = new float[n][n]; //Not distance, but the ratio of distance of a cells to danger compared to n
   yDist = new float[n][n];
-  frq = 15;
+  tornado = false;
+  
+  //CHANGABLE VARIABLES
+  frq = 30; //How often lightning strikes
   danger = "lightning"; //Danger can be "lightning" or "tornado"
-  cellBehaviour = "unaware"; //Cells can be "unaware" or "aware"
-  genCount = 0;
-  r = 7;
+  cellBehaviour = "scared"; //Cells can be "unaware", "scared", or "curious"
+  r = 6; //Radius of danger, doubled for lightning
+  fracAlive = 20; //The fraction of people alive at the start of the simulation (1/fracAlive)
   
   //Call starting function
   setStartPosition();
@@ -53,7 +60,7 @@ void setStartPosition() {
   for (int i = 0; i < n; i++) {
     for (int j = 0; j < n; j++) {
       //Creates randon number between 0 and 9
-      rand = int(random(20));
+      rand = int(random(fracAlive));
       
       //Creates a one in twenty chance that the cell begins alive
       if (rand == 0)
@@ -82,6 +89,9 @@ void draw() {
       else if (cells[i][j] == 2)
         fill(255,255,80);
         
+      else 
+        fill(200,200,200);
+        
       rect(x, y, cellSize, cellSize);
     }
     y += cellSize;
@@ -93,20 +103,20 @@ void draw() {
 void createNextGeneration() {
   movePopulation();
   
-  //If the fanger is tornado
+  //If the danger is tornado
   if (danger == "tornado")
-    moveTornado();
+    checkTornado();
     
   //If the danger is lightning 
   else if (danger == "lightning")
     checkLightning();
-    
+     
   genCount++;
 }
 
 void movePopulation() {
   //Call before for loop
-  if (genCount > 10 && cellBehaviour == "aware")
+  if (genCount > 10 && cellBehaviour != "unaware")
     findDist();
   
   for(int i = 0; i < n; i++) {
@@ -119,10 +129,19 @@ void movePopulation() {
         //Using the ratios of the length/height to the x/y dist from danger to add
         //a factor of urgency to each direction to simulate running away
         
-        leftValue = 1 - xDist[i][j];
-        rightValue = 1 + xDist[i][j];
-        upValue = 1 + yDist[i][j];
-        downValue = 1 - yDist[i][j];
+        if (cellBehaviour != "curious") {
+          leftValue = 1 - (yDist[i][j] / 2);
+          rightValue = 1 + (yDist[i][j] / 2);
+          upValue = 1 - (xDist[i][j] / 2);
+          downValue = 1 + (xDist[i][j] / 2);
+        }
+        
+        else {
+          leftValue = 1 + (yDist[i][j] / 2);
+          rightValue = 1 - (yDist[i][j] / 2);
+          upValue = 1 + (xDist[i][j] / 2);
+          downValue = 1 - (xDist[i][j] / 2);
+        }
           
         //Move in each direction, 0 being up and continuing clockwise
         if (rand < upValue) {
@@ -187,8 +206,15 @@ void findDist() {
     for(int j = 0; j < n; j++) {
       //This will give the distance of the last strike when compared to the size of the grid
       //This is for the "weighted random" system that takes these ratios and creates sqewed probablities to urge them into a certain direction
-      xDist[i][j] = (i - lastStrikeX) / float(n);
-      yDist[i][j] = (j - lastStrikeY) / float(n);
+      if (danger == "lightning") {
+        xDist[i][j] = (i - lastStrikeX) / float(n);
+        yDist[i][j] = (j - lastStrikeY) / float(n);
+      }
+      
+      else if (danger == "tornado") {
+        xDist[i][j] = (i - tornadoX) / float(n);
+        yDist[i][j] = (j - tornadoY) / float(n);
+      }
       
       //Subtract their values from one or negative one, depending on if they're positive or negative
       //The goal is to have a closer distance to the last lightning strike make them more urgent
@@ -197,13 +223,13 @@ void findDist() {
         xDist[i][j] = -1 + xDist[i][j];
         
       else 
-        xDist[i][j] = 1 - xDist[i][j];
+        xDist[i][j] =  1 - xDist[i][j];
         
       if (yDist[i][j] < 0)
         yDist[i][j] = -1 + yDist[i][j];
         
       else 
-        yDist[i][j] = 1 - yDist[i][j];
+        yDist[i][j] =  1 - yDist[i][j];
     }
   }
 }
@@ -221,8 +247,8 @@ void createLightning() {
   lightningX = int(random(n));
   lightningY = int(random(n));
   
-    for (int i = (lightningX - r); i < (lightningX + r); i++) {
-      for (int j = (lightningY - r); j < (lightningY + r); j++) {
+    for (int i = (lightningX - (2*r)); i < (lightningX + (2*r)); i++) {
+      for (int j = (lightningY - (2*r)); j < (lightningY + (2*r)); j++) {
         try {
           cells[i][j] = 2;
       }
@@ -237,8 +263,8 @@ void deleteLightning() {
   lastStrikeX = lightningX;
   lastStrikeY = lightningY;
   
-    for (int i = (lightningX - r); i < (lightningX + r); i++) {
-      for (int j = (lightningY - r); j < (lightningY + r); j++) {
+    for (int i = (lightningX - (2*r)); i < (lightningX + (2*r)); i++) {
+      for (int j = (lightningY - (2*r)); j < (lightningY + (2*r)); j++) {
         try {
           cells[i][j] = 0;
       }
@@ -249,6 +275,131 @@ void deleteLightning() {
   }
 }
 
-void moveTornado () {
+void checkTornado() {
+  if (tornado == false)
+    createTornado();
+
+  else {
+    moveTornado();
+  }
   
+  assignTornado();
+}
+
+void createTornado() {
+  tornadoDirection = int(random(4));
+  
+  if (tornadoDirection == 0) {
+    tornadoX = 0 - r;
+    tornadoY = int(random(n));
+  }
+  
+  else if (tornadoDirection == 1) {
+    tornadoX = n + r;
+    tornadoY = int(random(n));
+  }
+  
+  else if (tornadoDirection == 2) {
+    tornadoX = int(random(n));
+    tornadoY = 0 - r;
+  }
+  
+  else if (tornadoDirection == 3) {
+    tornadoX = int(random(n));
+    tornadoY = n + r;
+  }
+  
+  tornado = true;
+}
+
+void moveTornado() {
+  if (tornadoDirection == 0) {
+    tornadoX = tornadoX + 1;
+    if (tornadoX > (n + r))
+      tornado = false;
+  }
+  
+  else if (tornadoDirection == 1) {
+    tornadoX = tornadoX - 1;
+    if (tornadoX < ( 0 - (r + 1)))
+      tornado = false;
+  }
+  
+  else if (tornadoDirection == 2) {
+    tornadoY = tornadoY + 1;
+    if (tornadoY > (n + r))
+      tornado = false;
+  }
+  
+  else if (tornadoDirection == 3) {
+      tornadoY = tornadoY - 1;
+    if (tornadoY < (0 - (r + 1)))
+      tornado = false;
+  }
+}
+
+void assignTornado() {
+  if (tornadoDirection == 0) {
+    for (int i = (tornadoX - (r + 1)); i < (tornadoX + r); i++) {
+      for (int j = (tornadoY - r); j < (tornadoY + r); j++) {
+        try {
+          if (i < tornadoX - r)
+            cells[i][j] = 0;
+          else
+            cells[i][j] = 3;
+        }
+      
+        catch (IndexOutOfBoundsException e) {
+        } 
+      }
+    }
+  }
+  
+  if (tornadoDirection == 1) {
+    for (int i = (tornadoX - r); i < (tornadoX + (r + 1)); i++) {
+      for (int j = (tornadoY - r); j < (tornadoY + r); j++) {
+        try {
+          if (i > tornadoX + (r - 1))
+            cells[i][j] = 0;
+          else
+            cells[i][j] = 3;
+        }
+      
+        catch (IndexOutOfBoundsException e) {
+        } 
+      }
+    }
+  }
+  
+  if (tornadoDirection == 2) {
+    for (int i = (tornadoX - r); i < (tornadoX + r); i++) {
+      for (int j = (tornadoY - (r + 1)); j < (tornadoY + r); j++) {
+        try {
+          if (j < tornadoY - r)
+            cells[i][j] = 0;
+          else
+            cells[i][j] = 3;
+        }
+      
+        catch (IndexOutOfBoundsException e) {
+        } 
+      }
+    }
+  }
+  
+  if (tornadoDirection == 3) {
+    for (int i = (tornadoX - r); i < (tornadoX + r); i++) {
+      for (int j = (tornadoY - r); j < (tornadoY + (r + 1)); j++) {
+        try {
+          if (j > tornadoY + (r - 1))
+            cells[i][j] = 0;
+          else
+            cells[i][j] = 3;
+        }
+      
+        catch (IndexOutOfBoundsException e) {
+        } 
+      }
+    }
+  }
 }
